@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Bash(npm install:*)",
+      "Bash(npx electron-vite:*)",
+      "Bash(npx tsc:*)",
+      "Bash(node -e \"const mm = require\\(''music-metadata''\\); console.log\\(Object.keys\\(mm\\)\\)\")",
+      "Bash(ls node_modules/.bin/electron*)",
+      "Bash(./node_modules/.bin/electron.cmd --version)",
+      "Bash(node_modules/.bin/electron --version)",
+      "Bash(node_modules/electron/dist/electron.exe --version)",
+      "Bash(node -e \"const { execFileSync } = require\\(''''child_process''''\\); const path = require\\(''''path''''\\); const ep = path.join\\(''''node_modules'''', ''''electron'''', ''''dist'''', ''''electron.exe''''\\); console.log\\(ep\\);\")",
+      "Bash(node -e \"const electron = require\\(''electron''\\); console.log\\(''electron path:'', electron\\);\")",
+      "Bash(node node_modules/electron/cli.js out/versions.js)",
+      "Bash(node -e \":*)",
+      "Bash(node node_modules/.bin/asar list node_modules/electron/dist/resources/default_app.asar)",
+      "Bash(node -e \"console.log\\(require\\(''./node_modules/electron-vite/package.json''\\).version\\)\")",
+      "Bash(echo \"ELECTRON_RUN_AS_NODE=$ELECTRON_RUN_AS_NODE\" env)",
+      "Bash(curl -s http://localhost:5173/)",
+      "Bash(pkill -f 'electron-vite dev')",
+      "Bash(pkill -f vite 2)",
+      "Bash(/dev/null sleep:*)",
+      "Bash(curl -s http://localhost:5174/)",
+      "Bash(curl -v http://localhost:5174/)",
+      "Bash(grep -v \"//\")",
+      "Bash(timeout 15 npm run dev)",
+      "Bash(timeout 5 npx vite --config electron.vite.config.ts)",
+      "Bash(timeout 12 npm run dev)",
+      "Bash(find c:/Users/maxla/Desktop/media-player/src/renderer/src -name *.tsx -o -name *.ts)",
+      "Bash(grep -v \"^$\")",
+      "Bash(npm run:*)"
+    ]
+  }
+}

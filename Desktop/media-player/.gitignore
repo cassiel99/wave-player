@@ -1,0 +1,21 @@
+node_modules/
+out/
+dist/
+release/
+
+# TypeScript incremental build cache
+*.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Secrets / env
+.env
+.env.local
+.env.*
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
