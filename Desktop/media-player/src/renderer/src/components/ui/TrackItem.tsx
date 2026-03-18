@@ -1,8 +1,9 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Play, Pause, MoreHorizontal, Heart, Plus, ListMusic, Download } from 'lucide-react'
 import { Track, formatDuration } from '../../types'
 import { usePlayerStore } from '../../store/playerStore'
 import { motion } from 'framer-motion'
+import { fetchFallbackCover } from '../../utils/coverArt'
 
 interface TrackItemProps {
   track: Track
@@ -38,6 +39,17 @@ export const TrackItem: React.FC<TrackItemProps> = ({
   const [liked, setLiked] = useState(track.liked || false)
 
   const isCurrentTrack = currentTrack?.id === track.id
+  const [resolvedCover, setResolvedCover] = useState<string | null>(track.cover || null)
+
+  // Lazy-fetch cover from iTunes when the source doesn't provide one
+  useEffect(() => {
+    setResolvedCover(track.cover || null)
+    if (!track.cover && track.artist && track.title) {
+      fetchFallbackCover(track.artist, track.title).then((url) => {
+        if (url) setResolvedCover(url)
+      })
+    }
+  }, [track.id, track.cover])
 
   const handlePlay = () => {
     if (isCurrentTrack) {
@@ -53,7 +65,7 @@ export const TrackItem: React.FC<TrackItemProps> = ({
     onLike?.(track)
   }
 
-  const coverUrl = track.cover || null
+  const coverUrl = resolvedCover
 
   return (
     <motion.div

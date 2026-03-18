@@ -221,6 +221,11 @@ function setupIpcHandlers() {
   ipcMain.handle('vk:getMyAudio', async (_, count = 100, offset = 0) => {
     return await vkApi.getMyAudio(count, offset)
   })
+  ipcMain.handle('vk:getAllAudio', async (event) => {
+    return await vkApi.getAllAudio((loaded, total) => {
+      event.sender.send('vk:loadProgress', loaded, total)
+    })
+  })
   ipcMain.handle('vk:getPlaylists', async () => {
     return await vkApi.getPlaylists()
   })
@@ -232,6 +237,9 @@ function setupIpcHandlers() {
   })
   ipcMain.handle('vk:getRecommendations', async () => {
     return await vkApi.getRecommendations()
+  })
+  ipcMain.handle('vk:getStreamMix', async (_, count = 50) => {
+    return await vkApi.getStreamMixAudios(count)
   })
   ipcMain.handle('vk:addAudio', async (_, audioId: number, ownerId: number) => {
     return await vkApi.addAudio(audioId, ownerId)

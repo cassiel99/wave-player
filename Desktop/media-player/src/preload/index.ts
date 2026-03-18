@@ -30,11 +30,18 @@ const api = {
     getUser: () => ipcRenderer.invoke('vk:getUser'),
     getMyAudio: (count?: number, offset?: number) =>
       ipcRenderer.invoke('vk:getMyAudio', count, offset),
+    getAllAudio: () => ipcRenderer.invoke('vk:getAllAudio'),
+    onLoadProgress: (cb: (loaded: number, total: number) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, loaded: number, total: number) => cb(loaded, total)
+      ipcRenderer.on('vk:loadProgress', handler)
+      return () => ipcRenderer.removeListener('vk:loadProgress', handler)
+    },
     getPlaylists: () => ipcRenderer.invoke('vk:getPlaylists'),
     getPlaylistTracks: (ownerId: number, albumId: number) =>
       ipcRenderer.invoke('vk:getPlaylistTracks', ownerId, albumId),
     search: (query: string, count?: number) => ipcRenderer.invoke('vk:search', query, count),
     getRecommendations: () => ipcRenderer.invoke('vk:getRecommendations'),
+    getStreamMix: (count?: number) => ipcRenderer.invoke('vk:getStreamMix', count),
     addAudio: (audioId: number, ownerId: number) =>
       ipcRenderer.invoke('vk:addAudio', audioId, ownerId),
     removeAudio: (audioId: number, ownerId: number) =>

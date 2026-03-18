@@ -70,18 +70,17 @@
           ]
         }
       ],
-      "icon": "resources/icon.png",
+      "icon": "resources/icon.ico",
       "requestedExecutionLevel": "asInvoker"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "installerIcon": "resources/icon.png",
-      "uninstallerIcon": "resources/icon.png",
+      "installerIcon": "resources/icon.ico",
+      "uninstallerIcon": "resources/icon.ico",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Caeli",
-      "installerHeaderIcon": "resources/icon.png"
+      "shortcutName": "Caeli"
     },
     "directories": {
       "output": "dist",

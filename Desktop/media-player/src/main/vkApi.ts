@@ -27,8 +27,9 @@ export interface VKAudio {
     id: number
     title: string
     owner_id: number
-    thumb?: { photo_135: string; photo_300: string }
+    thumb?: { photo_135?: string; photo_300?: string }
   }
+  main_artists?: { id: string; name: string; domain: string }[]
   is_licensed: boolean
   date: number
 }
@@ -76,6 +77,10 @@ class VKApi {
     }
   }
 
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms))
+  }
+
   private async call<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
     if (!this.token) throw new Error('Not authenticated')
     const response = await this.client.get(`/${method}`, {
@@ -95,21 +100,103 @@ class VKApi {
     const response = await this.call<VKUser[]>('users.get', {
       fields: 'photo_100,photo_200',
     })
-    return response[0] || null
+    const user = response[0] || null
+    if (user) this.userId = user.id  // restore userId on every getUser call
+    return user
+  }
+
+  // Batch-fetch artist photos via VK execute (25 per request) and attach as cover
+  private async enrichWithArtistCovers(tracks: VKAudio[]): Promise<VKAudio[]> {
+    const needCover = tracks.filter(t => !t.album?.thumb && t.main_artists?.length)
+    if (!needCover.length) return tracks
+
+    const uniqueIds = [...new Set(needCover.flatMap(t => t.main_artists!.map(a => a.id)))]
+    const artistPhotos = new Map<string, string>()
+
+    // Process in batches of 25 (VK execute limit), 1s between each to stay under rate limit
+    for (let i = 0; i < uniqueIds.length; i += 25) {
+      if (i > 0) await this.sleep(1000)
+      const batch = uniqueIds.slice(i, i + 25)
+      const code =
+        batch.map((id, idx) => `var r${idx}=API.audio.getArtistById({"artist_id":"${id}"});`).join('') +
+        'return [' + batch.map((_, idx) => `r${idx}`).join(',') + '];'
+      let retries = 2
+      while (retries-- > 0) {
+        try {
+          const result = await this.call<{ photo?: { url: string; width: number }[] }[]>('execute', { code })
+          for (let j = 0; j < batch.length; j++) {
+            const artist = result[j]
+            if (artist?.photo?.length) {
+              const best = artist.photo.slice().sort((a, b) => b.width - a.width)[0]
+              if (best?.url) artistPhotos.set(batch[j], best.url)
+            }
+          }
+          break // success
+        } catch (e: unknown) {
+          const msg = (e as { message?: string })?.message || ''
+          if (msg.includes('Too many requests') && retries > 0) {
+            await this.sleep(2000)
+          } else {
+            console.warn('[VK] execute artist photos failed:', e)
+            break
+          }
+        }
+      }
+    }
+
+    return tracks.map(track => {
+      if (track.album?.thumb) return track
+      const artistId = track.main_artists?.[0]?.id
+      if (artistId && artistPhotos.has(artistId)) {
+        return { ...track, album: { ...(track.album as VKAudio['album']), thumb: { photo_300: artistPhotos.get(artistId)! } } }
+      }
+      return track
+    })
   }
 
   async getMyAudio(count = 100, offset = 0): Promise<{ items: VKAudio[]; count: number }> {
     const params: Record<string, unknown> = { count, offset }
     if (this.userId) params.owner_id = this.userId
-    return this.call('audio.get', params)
+    return this.call<{ items: VKAudio[]; count: number }>('audio.get', params)
+  }
+
+  // Fetches all tracks with pagination, then enriches covers once at the end
+  async getAllAudio(
+    onProgress?: (loaded: number, total: number) => void
+  ): Promise<{ items: VKAudio[]; count: number }> {
+    if (!this.userId) throw new Error('User ID not set — please re-authenticate')
+    const first = await this.call<{ items: VKAudio[]; count: number }>('audio.get', {
+      count: 300,
+      owner_id: this.userId,
+    })
+    const total = first.count || 0
+    let allItems: VKAudio[] = first.items || []
+    onProgress?.(allItems.length, total)
+
+    for (let offset = 300; offset < total; offset += 300) {
+      await this.sleep(400) // stay under VK rate limit (3 req/sec)
+      const batch = await this.call<{ items: VKAudio[]; count: number }>('audio.get', {
+        count: 300,
+        offset,
+        owner_id: this.userId,
+      })
+      allItems = allItems.concat(batch.items || [])
+      onProgress?.(allItems.length, total)
+    }
+
+    allItems = await this.enrichWithArtistCovers(allItems)
+    return { items: allItems, count: total }
   }
 
   async searchAudio(query: string, count = 50): Promise<{ items: VKAudio[]; count: number }> {
-    return this.call('audio.search', { q: query, count, sort: 2 })
+    const result = await this.call<{ items: VKAudio[]; count: number }>('audio.search', { q: query, count, sort: 2 })
+    result.items = await this.enrichWithArtistCovers(result.items || [])
+    return result
   }
 
   async getPlaylists(): Promise<{ items: VKPlaylist[]; count: number }> {
-    return this.call('audio.getPlaylists', { count: 50 })
+    if (!this.userId) throw new Error('User ID not set — please re-authenticate')
+    return this.call('audio.getPlaylists', { owner_id: this.userId, count: 50 })
   }
 
   async getPlaylistTracks(
@@ -119,8 +206,23 @@ class VKApi {
     return this.call('audio.get', { owner_id: ownerId, album_id: albumId })
   }
 
+  async getStreamMixAudios(count = 100): Promise<{ items: VKAudio[] }> {
+    // audio.getCatalog doesn't exist in this API version; getStreamMixAudios returns empty for all known mix_ids.
+    // Use getRecommendations (same concept) shuffled as the mix source.
+    const recs = await this.call<{ items: VKAudio[]; count: number }>('audio.getRecommendations', { count })
+    recs.items = await this.enrichWithArtistCovers(recs.items || [])
+    // Fisher-Yates shuffle
+    for (let i = recs.items.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [recs.items[i], recs.items[j]] = [recs.items[j], recs.items[i]]
+    }
+    return { items: recs.items }
+  }
+
   async getRecommendations(): Promise<{ items: VKAudio[]; count: number }> {
-    return this.call('audio.getRecommendations', { count: 100 })
+    const result = await this.call<{ items: VKAudio[]; count: number }>('audio.getRecommendations', { count: 100 })
+    result.items = await this.enrichWithArtistCovers(result.items || [])
+    return result
   }
 
   async addAudio(audioId: number, ownerId: number): Promise<number> {
