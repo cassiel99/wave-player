@@ -1,7 +1,7 @@
-import { app, shell, BrowserWindow, ipcMain, dialog, protocol, net } from 'electron'
-import { join } from 'path'
-import { existsSync } from 'fs'
-import { pathToFileURL } from 'url'
+import { app, shell, BrowserWindow, ipcMain, dialog, protocol } from 'electron'
+import { join, extname } from 'path'
+import { existsSync, statSync, createReadStream } from 'fs'
+import { Readable } from 'stream'
 const isDev = !!process.env['ELECTRON_RENDERER_URL']
 import Store from 'electron-store'
 import { scanMusicFiles, getMusicMetadata } from './fileScanner'
@@ -9,6 +9,21 @@ import { vkApi } from './vkApi'
 import { yandexApi } from './yandexApi'
 
 const store = new Store()
+
+// Must be called before app.whenReady() — enables range requests and secure origin for audio streaming
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'media',
+    privileges: {
+      secure: true,
+      standard: true,
+      stream: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      bypassCSP: true,
+    },
+  },
+])
 
 let mainWindow: BrowserWindow | null = null
 
@@ -69,14 +84,57 @@ function createWindow(): void {
 app.whenReady().then(() => {
   app.setAppUserModelId('com.waveplayer.app')
 
-  // Register file protocol for local audio
+  const MIME: Record<string, string> = {
+    mp3: 'audio/mpeg', flac: 'audio/flac', wav: 'audio/wav',
+    ogg: 'audio/ogg', m4a: 'audio/mp4', aac: 'audio/aac',
+    opus: 'audio/ogg; codecs=opus', wma: 'audio/x-ms-wma',
+    ape: 'audio/ape', aiff: 'audio/aiff', aif: 'audio/aiff',
+  }
+
+  // Register file protocol for local audio — proper Range request support
   // URL format: media://local?p=<encoded-absolute-path>
   protocol.handle('media', (request) => {
     try {
-      const url = new URL(request.url)
-      const filePath = url.searchParams.get('p') || ''
+      const urlObj = new URL(request.url)
+      const filePath = urlObj.searchParams.get('p') || ''
       if (!filePath) return new Response('Not found', { status: 404 })
-      return net.fetch(pathToFileURL(filePath).href)
+
+      const stat = statSync(filePath)
+      const fileSize = stat.size
+      const ext = extname(filePath).slice(1).toLowerCase()
+      const mimeType = MIME[ext] || 'audio/mpeg'
+
+      const rangeHeader = request.headers.get('range')
+      if (rangeHeader) {
+        const match = rangeHeader.match(/bytes=(\d+)-(\d*)/)
+        if (!match) return new Response('Bad range', { status: 416 })
+        const start = parseInt(match[1], 10)
+        const end = match[2] !== '' ? parseInt(match[2], 10) : fileSize - 1
+        const chunkSize = end - start + 1
+        const nodeStream = createReadStream(filePath, { start, end })
+        const webStream = Readable.toWeb(nodeStream) as ReadableStream
+        return new Response(webStream, {
+          status: 206,
+          headers: {
+            'Content-Type': mimeType,
+            'Content-Length': String(chunkSize),
+            'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+            'Accept-Ranges': 'bytes',
+          },
+        })
+      }
+
+      // Full file
+      const nodeStream = createReadStream(filePath)
+      const webStream = Readable.toWeb(nodeStream) as ReadableStream
+      return new Response(webStream, {
+        status: 200,
+        headers: {
+          'Content-Type': mimeType,
+          'Content-Length': String(fileSize),
+          'Accept-Ranges': 'bytes',
+        },
+      })
     } catch {
       return new Response('Not found', { status: 404 })
     }

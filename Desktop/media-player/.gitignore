@@ -15,6 +15,9 @@ npm-debug.log*
 .env.local
 .env.*
 
+# Claude Code / IDE
+.claude/
+
 # OS junk
 .DS_Store
 Thumbs.db

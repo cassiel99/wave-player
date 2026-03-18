@@ -119,7 +119,7 @@ export function yandexCover(uri?: string, size = 300): string | null {
 
 // Format duration from seconds
 export function formatDuration(seconds: number): string {
-  if (!seconds || isNaN(seconds)) return '0:00'
+  if (!seconds || isNaN(seconds) || !isFinite(seconds)) return '0:00'
   const m = Math.floor(seconds / 60)
   const s = Math.floor(seconds % 60)
   return `${m}:${s.toString().padStart(2, '0')}`

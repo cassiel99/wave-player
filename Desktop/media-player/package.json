@@ -1,9 +1,9 @@
 {
   "name": "caeli",
   "version": "0.1.0-beta.1",
-  "description": "Wave Player - Beautiful Music Player with VK & Yandex Music",
+  "description": "Caeli — Beautiful Music Player with VK & Yandex Music",
   "main": "./out/main/index.js",
-  "author": "Wave Player",
+  "author": "cassiel99",
   "private": true,
   "scripts": {
     "dev": "cross-env ELECTRON_RUN_AS_NODE= electron-vite dev",
@@ -41,16 +41,51 @@
     "vite": "^6.0.5"
   },
   "build": {
-    "appId": "com.waveplayer.app",
+    "appId": "com.cassiel.caeli",
     "productName": "Caeli",
-    "directories": {
-      "output": "dist"
-    },
+    "asar": true,
+    "files": [
+      "out/**",
+      "resources/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources",
+        "to": "resources"
+      }
+    ],
     "win": {
-      "target": "nsis"
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "resources/icon.png",
+      "requestedExecutionLevel": "asInvoker"
     },
-    "linux": {
-      "target": "AppImage"
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "resources/icon.png",
+      "uninstallerIcon": "resources/icon.png",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Caeli",
+      "installerHeaderIcon": "resources/icon.png"
+    },
+    "directories": {
+      "output": "dist",
+      "buildResources": "resources"
     }
   },
   "productName": "Caeli"
