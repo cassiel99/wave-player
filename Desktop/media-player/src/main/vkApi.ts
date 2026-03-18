@@ -43,23 +43,110 @@ export interface VKPlaylist {
   photo?: { photo_135: string; photo_300: string; photo_600: string }
 }
 
+const VK_CLIENT_ID = '2685278'
+const VK_CLIENT_SECRET = 'lxhD8OD7dMsqtXIm5IUY' // Kate Mobile — public in open-source VK clients
+const VK_USER_AGENT = 'KateMobileAndroid/56 lite-460 (Android 4.4.2; SDK 19; x86; unknown Android SDK built for x86; en)'
+
+export type VKLoginResult =
+  | { success: true; token: string; user: VKUser }
+  | { need2FA: true; sid: string }
+  | { needCaptcha: true; captchaSid: string; captchaImg: string }
+  | { success: false; error: string }
+
 class VKApi {
   private token: string | null = null
   private userId: number | null = null
   private client: AxiosInstance
+  // Temporarily hold credentials during 2FA flow
+  private pendingPhone: string | null = null
+  private pendingPassword: string | null = null
 
   constructor() {
     this.client = axios.create({
       baseURL: VK_API_BASE,
       timeout: 15000,
-      headers: {
-        'User-Agent': 'KateMobileAndroid/56 lite-460 (Android 4.4.2; SDK 19; x86; unknown Android SDK built for x86; en)',
-      },
+      headers: { 'User-Agent': VK_USER_AGENT },
     })
   }
 
   setToken(token: string) {
     this.token = token
+  }
+
+  // Direct login with phone/password — no browser needed
+  async loginWithPassword(phone: string, password: string, captchaSid?: string, captchaKey?: string): Promise<VKLoginResult> {
+    this.pendingPhone = phone
+    this.pendingPassword = password
+    return this._doDirectAuth({ captchaSid, captchaKey })
+  }
+
+  // Confirm 2FA SMS/push code
+  async confirm2FA(code: string, sid: string): Promise<VKLoginResult> {
+    if (!this.pendingPhone || !this.pendingPassword) {
+      return { success: false, error: 'Сессия истекла, войдите заново' }
+    }
+    return this._doDirectAuth({ code, sid })
+  }
+
+  private async _doDirectAuth(extra: {
+    code?: string; sid?: string; captchaSid?: string; captchaKey?: string
+  } = {}): Promise<VKLoginResult> {
+    const params: Record<string, string> = {
+      grant_type: 'password',
+      client_id: VK_CLIENT_ID,
+      client_secret: VK_CLIENT_SECRET,
+      username: this.pendingPhone!,
+      password: this.pendingPassword!,
+      scope: 'audio,friends,wall,offline',
+      '2fa_supported': '1',
+      v: VK_API_VERSION,
+    }
+    if (extra.code) params['code'] = extra.code
+    if (extra.sid) params['sid'] = extra.sid
+    if (extra.captchaSid) params['captcha_sid'] = extra.captchaSid
+    if (extra.captchaKey) params['captcha_key'] = extra.captchaKey
+
+    try {
+      const resp = await axios.get('https://oauth.vk.com/token', {
+        params,
+        headers: { 'User-Agent': VK_USER_AGENT },
+        timeout: 15000,
+      })
+      const data = resp.data
+
+      if (data.access_token) {
+        this.token = data.access_token
+        if (data.user_id) this.userId = data.user_id
+        // Clear pending credentials
+        this.pendingPhone = null
+        this.pendingPassword = null
+        const user = await this.getUser()
+        if (!user) return { success: false, error: 'Не удалось получить данные пользователя' }
+        return { success: true, token: data.access_token, user }
+      }
+
+      if (data.error === 'need_validation' && data.redirect_uri) {
+        // Extract sid from redirect_uri e.g. https://vk.com/login?act=authcheck&sid=XXXXX
+        const url = new URL(data.redirect_uri)
+        const sid = url.searchParams.get('sid') || ''
+        return { need2FA: true, sid }
+      }
+
+      if (data.error === 'need_captcha') {
+        return { needCaptcha: true, captchaSid: data.captcha_sid, captchaImg: data.captcha_img }
+      }
+
+      return { success: false, error: data.error_description || data.error || 'Ошибка авторизации' }
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { error_description?: string; error?: string } }; message?: string }
+      const apiErr = err?.response?.data
+      if (apiErr?.error === 'need_validation' && (apiErr as { redirect_uri?: string }).redirect_uri) {
+        const url = new URL((apiErr as { redirect_uri: string }).redirect_uri)
+        const sid = url.searchParams.get('sid') || ''
+        return { need2FA: true, sid }
+      }
+      return { success: false, error: apiErr?.error_description || apiErr?.error || err?.message || 'Ошибка соединения' }
+    }
   }
 
   async authenticate(token: string): Promise<{ success: boolean; user?: VKUser; error?: string }> {

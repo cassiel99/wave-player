@@ -27,6 +27,9 @@ const api = {
   // VK Music
   vk: {
     auth: (token: string) => ipcRenderer.invoke('vk:auth', token),
+    loginPassword: (phone: string, password: string, captchaSid?: string, captchaKey?: string) => ipcRenderer.invoke('vk:loginPassword', phone, password, captchaSid, captchaKey),
+    confirm2FA: (code: string, sid: string) => ipcRenderer.invoke('vk:confirm2FA', code, sid),
+    openAuthWindow: () => ipcRenderer.invoke('vk:openAuthWindow'),
     getUser: () => ipcRenderer.invoke('vk:getUser'),
     getMyAudio: (count?: number, offset?: number) =>
       ipcRenderer.invoke('vk:getMyAudio', count, offset),

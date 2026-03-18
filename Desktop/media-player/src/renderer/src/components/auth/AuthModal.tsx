@@ -1,8 +1,8 @@
-import React, { useState } from 'react'
+import React, { useState, useRef } from 'react'
 import { Modal } from '../ui/Modal'
 import { useServicesStore } from '../../store/servicesStore'
 import { useUIStore } from '../../store/uiStore'
-import { Eye, EyeOff, ExternalLink, Key, User, AlertCircle } from 'lucide-react'
+import { Eye, EyeOff, ExternalLink, Key, User, AlertCircle, LogIn } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 interface AuthModalProps {
@@ -11,31 +11,32 @@ interface AuthModalProps {
   service: 'vk' | 'yandex' | null
 }
 
-const VK_AUTH_URL = `https://oauth.vk.com/authorize?client_id=2685278&scope=audio,friends,wall,offline&redirect_uri=https://oauth.vk.com/blank.html&display=page&response_type=token&v=5.199`
 const YANDEX_AUTH_URL = `https://oauth.yandex.ru/authorize?response_type=token&client_id=c0ebe342af7d48fbbbfcf2d2eedb8f9e&force_confirm=false`
 
 const VKAuthForm: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-  const [token, setToken] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const { setVKUser } = useServicesStore()
 
-  const handleAuth = async () => {
-    if (!token.trim()) return
+  const handleOpenWindow = async () => {
     setLoading(true)
     setError(null)
     try {
-      const result = await window.api.vk.auth(token.trim())
-      if (result.success && result.user) {
-        setVKUser(result.user as import('../../types').VKUser, token.trim())
-        await window.api.store.set('vk:token', token.trim())
-        onClose()
-      } else {
-        setError(result.error || 'Ошибка авторизации')
+      const result = await window.api.vk.openAuthWindow()
+      if (result.success && result.token) {
+        const authResult = await window.api.vk.auth(result.token)
+        if (authResult.success && authResult.user) {
+          setVKUser(authResult.user as import('../../types').VKUser, result.token)
+          await window.api.store.set('vk:token', result.token)
+          onClose()
+        } else {
+          setError(authResult.error || 'Не удалось получить данные пользователя')
+        }
+      } else if (!result.success) {
+        if (result.error !== 'Окно закрыто') setError(result.error || 'Авторизация отменена')
       }
     } catch (e: unknown) {
-      const err = e as { message?: string }
-      setError(err?.message || 'Ошибка соединения')
+      setError((e as { message?: string })?.message || 'Ошибка соединения')
     } finally {
       setLoading(false)
     }
@@ -43,51 +44,42 @@ const VKAuthForm: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
   return (
     <div className="space-y-4">
-      <div className="bg-vk/10 border border-vk/20 rounded-xl p-4 text-sm text-text-secondary leading-relaxed">
-        <p className="font-medium text-text-primary mb-2">Как получить токен VK:</p>
-        <ol className="list-decimal list-inside space-y-1 text-xs">
-          <li>Нажмите «Открыть VK OAuth» ниже</li>
-          <li>Войдите в VK и разрешите доступ</li>
-          <li>Страница станет белой — скопируйте адрес из браузера</li>
-          <li>Найдите в нём <span className="text-text-primary font-mono">access_token=</span> и скопируйте значение до <span className="text-text-primary font-mono">&amp;</span></li>
-          <li>Вставьте токен в поле ниже</li>
-        </ol>
-      </div>
-
-      <a
-        href={VK_AUTH_URL}
-        target="_blank"
-        rel="noreferrer"
-        className="flex items-center justify-center gap-2 w-full py-2.5 bg-vk hover:bg-vk-dark rounded-xl text-white font-medium transition-colors text-sm"
-      >
-        <ExternalLink size={16} />
-        Открыть VK OAuth
-      </a>
-
-      <div className="space-y-2">
-        <label className="text-xs text-text-muted font-medium">Access Token</label>
-        <div className="relative">
-          <Key size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-          <input
-            type="text"
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-            placeholder="Вставьте access_token..."
-            className="w-full bg-bg-hover border border-border rounded-xl pl-9 pr-4 py-2.5 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-vk transition-colors"
-          />
+      <div className="flex flex-col items-center gap-3 py-2">
+        <div className="w-16 h-16 bg-vk rounded-2xl flex items-center justify-center shadow-lg">
+          <span className="text-white font-bold text-2xl">VK</span>
+        </div>
+        <div className="text-center">
+          <p className="text-text-primary font-medium">Войти через VK</p>
+          <p className="text-text-muted text-xs mt-1">
+            Откроется окно браузера с официальным сайтом VK.
+            Войдите в свой аккаунт — приложение автоматически получит доступ.
+          </p>
         </div>
       </div>
 
       {error && (
-        <p className="text-red-400 text-sm bg-red-400/10 rounded-lg px-3 py-2">{error}</p>
+        <div className="flex items-start gap-2 text-red-400 text-sm bg-red-400/10 rounded-xl px-3 py-2">
+          <AlertCircle size={14} className="mt-0.5 shrink-0" />
+          {error}
+        </div>
       )}
 
       <button
-        onClick={handleAuth}
-        disabled={!token.trim() || loading}
-        className="w-full py-2.5 bg-vk hover:bg-vk-dark disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-white font-medium transition-colors text-sm"
+        onClick={handleOpenWindow}
+        disabled={loading}
+        className="w-full py-2.5 bg-vk hover:bg-vk-dark disabled:opacity-60 disabled:cursor-not-allowed rounded-xl text-white font-medium transition-colors text-sm flex items-center justify-center gap-2"
       >
-        {loading ? 'Проверяем...' : 'Войти'}
+        {loading ? (
+          <>
+            <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+            Ожидаем авторизацию...
+          </>
+        ) : (
+          <>
+            <LogIn size={15} />
+            Войти через VK
+          </>
+        )}
       </button>
     </div>
   )

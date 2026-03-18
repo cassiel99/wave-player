@@ -215,6 +215,56 @@ function setupIpcHandlers() {
   ipcMain.handle('vk:auth', async (_, accessToken: string) => {
     return await vkApi.authenticate(accessToken)
   })
+  ipcMain.handle('vk:loginPassword', async (_, phone: string, password: string, captchaSid?: string, captchaKey?: string) => {
+    return await vkApi.loginWithPassword(phone, password, captchaSid, captchaKey)
+  })
+  ipcMain.handle('vk:confirm2FA', async (_, code: string, sid: string) => {
+    return await vkApi.confirm2FA(code, sid)
+  })
+  ipcMain.handle('vk:openAuthWindow', async () => {
+    return new Promise<{ success: boolean; token?: string; error?: string }>((resolve) => {
+      const authWin = new BrowserWindow({
+        width: 700,
+        height: 600,
+        title: 'Войти в VK',
+        autoHideMenuBar: true,
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+        },
+      })
+
+      const authUrl =
+        `https://oauth.vk.com/authorize?client_id=2685278` +
+        `&scope=audio,friends,wall,offline` +
+        `&redirect_uri=https://oauth.vk.com/blank.html` +
+        `&display=page&response_type=token&v=5.131`
+
+      authWin.loadURL(authUrl)
+
+      const tryExtractToken = (url: string) => {
+        try {
+          // Token is in the fragment: blank.html#access_token=...&...
+          if (!url.startsWith('https://oauth.vk.com/blank.html')) return false
+          const fragment = url.split('#')[1] || ''
+          const params = new URLSearchParams(fragment)
+          const token = params.get('access_token')
+          if (token) {
+            authWin.close()
+            resolve({ success: true, token })
+            return true
+          }
+        } catch {}
+        return false
+      }
+
+      authWin.webContents.on('will-navigate', (_, url) => tryExtractToken(url))
+      authWin.webContents.on('did-navigate', (_, url) => tryExtractToken(url))
+      authWin.webContents.on('did-redirect-navigation', (_, url) => tryExtractToken(url))
+
+      authWin.on('closed', () => resolve({ success: false, error: 'Окно закрыто' }))
+    })
+  })
   ipcMain.handle('vk:getUser', async () => {
     return await vkApi.getUser()
   })
